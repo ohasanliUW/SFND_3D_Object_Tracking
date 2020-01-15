@@ -42,6 +42,7 @@ DMatch data type has queryIdx and trainIdx that are index of keypoint in previou
 ### FP.2.
 Lidar Points can accurately reflect closest points of an object. However, there is a chance of a noise in the environment where few lidar points in the cloud could reflect non-obstacle substances. These could lead into an incorrect TTC computation which can result in a spurious alarms and autonomous braking (not desired). In order to overcome this, Lidar points were sorted by X axis and projected onto. If there is a lidar point closer than actual proceeding vehicle, then the distance between that point and next closest lidar point on the obstacle would be larger than the standard deviation. If so, it is a noise, otherwise it is a valid lidar point. Note that this approach strictly assumes that noisy lidar points are scattered and distance between them are not closer than distance between lidar points of true object.
 The rest of the calculation follows same approach taken during the practice exercises.
+See function filterLidarOutliers() function.
 
 ### FP.3.
 In general, we need to check if specified bounding box contains given keypoints. However, outlier matches need to be eliminated for more accurate TTC computation. In this function, the standard deviation of distance between matched keypoints is calculated. Any match that deviates more than that is ignored.
@@ -49,5 +50,10 @@ In general, we need to check if specified bounding box contains given keypoints.
 ### FP.4.
 This part has been done during practice exercises. To reduce TTC errors further, median of distance ratios between matching keypoints is used.
 
-### FP.5.
+### FP.5 and FP.6
+TTC based on Lidar and Camera will be different most of the time because for Lidar, constant velocity model has been used, while for Camera, constant acceleration model has been used. However, the difference between results are usually not far apart. One of the best results was obtained by running AKAZE detector with AKAZE descriptor.
+![AKAZE, AKAZE combination from results](tools/AKAZE-AKAZE.png)
 
+For most of the frames, results vary between 0 to 3 seconds. However, for frames 5, 6, 7, 8 the delta between TTCs were at least 4 seconds and 19 seconds for frame 7. Looking at the top-down view of frame 6 and 7, I see that most of the outliers have been removed.
+<img src="tools/top-down-5.png" width="242" height="247" /><img src="tools/top-down-6.png" width="242" height="247" />
+<img src="tools/top-down-6.png" width="242" height="247" /><img src="tools/top-down-7.png" width="242" height="247" />
