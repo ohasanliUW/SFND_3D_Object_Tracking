@@ -51,9 +51,20 @@ In general, we need to check if specified bounding box contains given keypoints.
 This part has been done during practice exercises. To reduce TTC errors further, median of distance ratios between matching keypoints is used.
 
 ### FP.5 and FP.6
-TTC based on Lidar and Camera will be different most of the time because for Lidar, constant velocity model has been used, while for Camera, constant acceleration model has been used. However, the difference between results are usually not far apart. One of the best results was obtained by running AKAZE detector with AKAZE descriptor.
+One of the best results was obtained by running AKAZE detector with AKAZE descriptor.
 ![AKAZE, AKAZE combination from results](tools/AKAZE-AKAZE.png)
 
-For most of the frames, results vary between 0 to 3 seconds. However, for frames 5, 6, 7, 8 the delta between TTCs were at least 4 seconds and 19 seconds for frame 7. Looking at the top-down view of frame 6 and 7, I see that most of the outliers have been removed.
-<img src="tools/top-down-5.png" width="242" height="247" /><img src="tools/top-down-6.png" width="242" height="247" />
-<img src="tools/top-down-6.png" width="242" height="247" /><img src="tools/top-down-7.png" width="242" height="247" />
+For most of the frames, results vary between 0 to 3 seconds. However, for frames 5, 6, 7, 8 the delta between TTCs were at least 4 seconds, and for frame 7 it was 19 seconds. Looking at the top-down view of frame 6 and 7, I see that most of the outliers have been removed.
+
+Frame 5 to Frame 6
+
+<img src="tools/top-down-5.png" width="400" height="200" /><img src="tools/top-down-6.png" width="400" height="200" />
+
+Frame 6 to Frame 7
+
+<img src="tools/top-down-6.png" width="400" height="200" /><img src="tools/top-down-7.png" width="400" height="200" />
+
+The change in minX from frame 6 to frame 7 is so small that TTC with constant velocity model is high. Initially, assumed filtering function mistakenly removed inlier points but found out that it actually did not by comparing results without filtering.
+If TTC Lidar deduces 34 while Camera deduces 15, this means approximately, the minXCurr - minXPrev must be twice as big to get the results closer. None of the filtered points could explain missing points.
+Other reasons to the error could be calibration errors? What if the camera frame does not really match the lidar point cloud for that frame?
+At this point, I was not able to explain the reason behind it.
