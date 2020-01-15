@@ -208,7 +208,7 @@ int main(int argc, const char *argv[])
 
             vector<cv::DMatch> matches;
             string matcherType = "MAT_BF";        // MAT_BF, MAT_FLANN
-            string descriptorType = (detectorType == "SIFT" || detectorType == "HARRIS" ? "DES_HOG" : "DES_BINARY");
+            string descriptorType2 = (detectorType == "SIFT" || detectorType == "HARRIS" ? "DES_HOG" : "DES_BINARY");
             string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
 
             if (argc > 3) {
@@ -220,7 +220,7 @@ int main(int argc, const char *argv[])
 
             matchDescriptors((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
                              (dataBuffer.end() - 2)->descriptors, (dataBuffer.end() - 1)->descriptors,
-                             matches, descriptorType, matcherType, selectorType);
+                             matches, descriptorType2, matcherType, selectorType);
 
             // store matches in current data frame
             (dataBuffer.end() - 1)->kptMatches = matches;
@@ -282,7 +282,7 @@ int main(int argc, const char *argv[])
                     computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
                     //// EOF STUDENT ASSIGNMENT
 
-                    bVis = false;
+                    bVis = true;
                     if (bVis)
                     {
                         cv::Mat visImg = (dataBuffer.end() - 1)->cameraImg.clone();
@@ -300,7 +300,8 @@ int main(int argc, const char *argv[])
                         cv::waitKey(0);
                     }
                     bVis = false;
-                    cerr << imgIndex << "," << ttcLidar << "," << ttcCamera << "," << ttcLidar - ttcCamera << endl;
+                    cerr << detectorType << "," << descriptorType << "," << selectorType << "," << imgIndex
+                         << "," << ttcLidar << "," << ttcCamera << "," << ttcLidar - ttcCamera << endl;
 
                 } // eof TTC computation
             } // eof loop over all BB matches            

@@ -4,3 +4,4 @@ src/.ccls
 src/.ccls-cache/
 src/cscope.out
 src/tags
+.DS_Store

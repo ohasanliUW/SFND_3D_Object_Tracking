@@ -33,3 +33,21 @@ In this final project, you will implement the missing parts in the schematic. To
 2. Make a build directory in the top level project directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./3D_object_tracking`.
+
+
+## Project Report
+### FP.1.
+DMatch data type has queryIdx and trainIdx that are index of keypoint in previous and current frame respectively. Idea is to extract bounding boxes for each match in both current and previous frame. Then consider all possible match pairs of current and previous matching boxes and find most occuring pair.
+
+### FP.2.
+Lidar Points can accurately reflect closest points of an object. However, there is a chance of a noise in the environment where few lidar points in the cloud could reflect non-obstacle substances. These could lead into an incorrect TTC computation which can result in a spurious alarms and autonomous braking (not desired). In order to overcome this, Lidar points were sorted by X axis and projected onto. If there is a lidar point closer than actual proceeding vehicle, then the distance between that point and next closest lidar point on the obstacle would be larger than the standard deviation. If so, it is a noise, otherwise it is a valid lidar point. Note that this approach strictly assumes that noisy lidar points are scattered and distance between them are not closer than distance between lidar points of true object.
+The rest of the calculation follows same approach taken during the practice exercises.
+
+### FP.3.
+In general, we need to check if specified bounding box contains given keypoints. However, outlier matches need to be eliminated for more accurate TTC computation. In this function, the standard deviation of distance between matched keypoints is calculated. Any match that deviates more than that is ignored.
+
+### FP.4.
+This part has been done during practice exercises. To reduce TTC errors further, median of distance ratios between matching keypoints is used.
+
+### FP.5.
+

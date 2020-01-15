@@ -148,6 +148,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
  *  - Calculate the standard deviation
  *  - Choose matches with very low deviation
  */
+static
 void clusterKptMatchesWithROI_internal(BoundingBox &boundingBox,
                               std::vector<cv::KeyPoint> &kptsPrev,
                               std::vector<cv::KeyPoint> &kptsCurr,
@@ -192,6 +193,7 @@ void clusterKptMatchesWithROI(BoundingBox &boundingBox,
 {
     clusterKptMatchesWithROI_internal(boundingBox, kptsPrev, kptsCurr, kptMatches);
 }
+
 // Compute time-to-collision (TTC) based on keypoint correspondences in successive images
 // NOTE: This was done during previous lessons, took the code from Lesson 3
 void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, 
@@ -237,7 +239,6 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
         TTC = NAN;
         return;
     }
-
 
     // compute median dist ratio to remove outlier influence
     std::sort(distRatios.begin(), distRatios.end());
@@ -333,7 +334,7 @@ getLidarMinX (std::vector<LidarPoint> &lidarPoints) {
     // diffs we need. So, add them up then divide by the sizeof xdiffs - 1
     double mean = std::accumulate(std::next(std::begin(xdiffs)), //first diff
                                   std::end(xdiffs),     //last
-                                  0) / (xdiffs.size() - 1);
+                                  0.0) / (double)(xdiffs.size() - 1);
 
     double stddev = 0.0;
 
@@ -343,28 +344,32 @@ getLidarMinX (std::vector<LidarPoint> &lidarPoints) {
     stddev = sqrt(stddev / (xdiffs.size() - 1));
 
     //start a new stack frame for temporary variables
-    {
-        auto lIt = std::begin(lidarPoints), lEnd = std::prev(std::end(lidarPoints));
-        auto diffIt = std::next(std::begin(xdiffs)), diffEnd = std::end(xdiffs);
+    auto lIt = std::begin(lidarPoints), lEnd = std::prev(std::end(lidarPoints));
+    auto diffIt = std::next(std::begin(xdiffs)), diffEnd = std::end(xdiffs);
 
-        for (; lIt != lEnd && diffIt != diffEnd; lIt++, diffIt++) {
-            if (abs(*diffIt) - mean > stddev) {
-                std::cout << "OHASANLI: point at " << lIt->x << " is noise" << std::endl;
-                continue;
-            }
+    for (; lIt != lEnd && diffIt != diffEnd; lIt++, diffIt++) {
+        if (abs(lIt->y) > laneWidth / 2.0 ||
+            abs(*diffIt - mean) > stddev) {
+            continue;
+        }
 
-            if (abs(lIt->y) <= laneWidth / 2.0)
-            { // 3D point within ego lane?
-                if (lIt->x < minX) {
-                    minX = lIt->x;
-                    break;
-                }
-            }
+        if (lIt->x < minX) {
+            minX = lIt->x;
+            break;
         }
     }
     return minX;
 }
 
+/*
+ * Computes TTC by "filtering" outliers via comparing their distance from next
+ * lidar point in X axis to standard deviation.
+ * NOTE: Doing the filtering during TTC computation is very WRONG because one
+ * needs to do it for both previus and current lidar point cloud. To reduce the
+ * overhead, one save the results dynamically for current point cloud and use it
+ * for next frame as a previous lidar point cloud. For this project, it could
+ * have been achieved by filterin during 
+ */
 static
 void computeTTCLidar_internal_stddev(std::vector<LidarPoint> &lidarPointsPrev,
                                      std::vector<LidarPoint> &lidarPointsCurr,
@@ -373,7 +378,6 @@ void computeTTCLidar_internal_stddev(std::vector<LidarPoint> &lidarPointsPrev,
     double laneWidth = 4.0;
     double minXPrev = getLidarMinX(lidarPointsPrev);
     double minXCurr = getLidarMinX(lidarPointsCurr);
-    std::cout << "CUrrent closest is " << minXCurr << std::endl;
     double dT = 1 / frameRate;        // time between two measurements in seconds
 
     // compute TTC from both measurements
@@ -384,7 +388,6 @@ void computeTTCLidar_internal_stddev(std::vector<LidarPoint> &lidarPointsPrev,
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    //TODO: get ticks and measure performance
     computeTTCLidar_internal_stddev(lidarPointsPrev, lidarPointsCurr, frameRate, TTC);
 }
 
@@ -401,7 +404,7 @@ void matchBoundingBoxes(std::vector<cv::DMatch> &matches,
      * - For each match, find current and previous keypoints (prevKP, currKP)
      *   - Find bounding boxes containing prevKP in previous frame and save them
      *   - Find bounding boxes containing currKP in current frame and save them
-     *   - Create all possible pairs with saved box ids
+     *   - Consider all possible pairs with saved box ids via a counter
      * - For each box id currID in current frame
      *   - Find most occuring pair with first value currID
      *   - create a pair with these two number and push to bbBestMatches
