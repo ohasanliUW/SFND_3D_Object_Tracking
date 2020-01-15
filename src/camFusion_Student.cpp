@@ -12,6 +12,97 @@
 
 using namespace std;
 
+/*
+ * Filter Lidar outliers as follows:
+ *  - sort all points in X coordinates
+ *  - calculate mean of adjacent differences in X axis
+ *  - calcualte standard deviation of these difference
+ *  - filter out any point that deviates more than standard deviation
+ *  - filter out any point that is outside ego lane
+ */
+static void 
+filterLidarOutliers (std::vector<LidarPoint> &lidarPoints) {
+    // Vector for adjacent differences of X values
+    std::vector<double> xdiffs(lidarPoints.size(), 0);
+    // Lidar points without outliers
+    std::vector<LidarPoint> filteredLidarPoints;
+    double laneWidth = 4.0;
+
+    // Sort all lidar points so that when adding them to their enclosing boxes
+    // they are still sorted for later use
+    std::sort(std::begin(lidarPoints), std::end(lidarPoints),
+            [](const LidarPoint &a, const LidarPoint& b) {
+                return a.x < b.x;
+            });
+
+/*
+    std::adjacent_difference(std::begin(lidarPoints), //first
+                             std::end(lidarPoints),   //last
+                             std::begin(xdiffs),          //result first
+                             [](const LidarPoint& a, const LidarPoint& b) {
+                                return cv::norm(a.x - b.x);
+                             });
+*/
+
+
+    // Replicate std::adjacent_difference() behavior
+    // NOTE: cannot use std::adjacent_difference() since output vector has
+    // different type than input
+    // See https://en.cppreference.com/w/cpp/algorithm/adjacent_difference
+    auto adj_diff = [](std::vector<LidarPoint>::iterator first,
+                       std::vector<LidarPoint>::iterator last,
+                       std::vector<double>::iterator d_first)
+    {
+        if (first == last) return d_first;
+
+        double acc = first->x;
+        *d_first = acc;
+        while (++first != last) {
+            double val = first->x;
+            *++d_first = val - std::move(acc);
+            acc = std::move(val);
+        }
+        return ++d_first;
+    };
+
+    // start a temporary stack frame so that symbols within this frame
+    // can be used elsewhere once we are done with current frame
+    {
+        auto it = std::begin(lidarPoints);
+        auto end = std::end(lidarPoints);
+        auto diffIt = std::begin(xdiffs);
+        adj_diff(it, end, diffIt);
+    }
+
+    // first element of xdiffs is unmodified copy of first lidar point X value.
+    // Elements starting from xdiffs.being()+1 up to xdiffs.end() has all the
+    // diffs we need. So, add them up then divide by the sizeof xdiffs - 1
+    double mean = std::accumulate(std::next(std::begin(xdiffs)), //first diff
+                                  std::end(xdiffs),     //last
+                                  0.0) / (double)(xdiffs.size() - 1);
+
+    double stddev = 0.0;
+
+    for (auto diff = xdiffs.begin()+1; diff != xdiffs.end(); diff++) {
+        stddev += pow(*diff - mean, 2);
+    }
+    stddev = sqrt(stddev / (xdiffs.size() - 1));
+
+    //start a new stack frame for temporary variables
+    auto lIt = std::begin(lidarPoints), lEnd = std::prev(std::end(lidarPoints));
+    auto diffIt = std::next(std::begin(xdiffs)), diffEnd = std::end(xdiffs);
+
+    for (; lIt != lEnd && diffIt != diffEnd; lIt++, diffIt++) {
+        if (abs(lIt->y) > laneWidth / 2.0 ||
+            abs(*diffIt - mean) > stddev) {
+            continue;
+        }
+
+        filteredLidarPoints.push_back(*lIt);
+    }
+
+    lidarPoints = filteredLidarPoints;
+}
 
 // Create groups of Lidar points whose projection into the camera falls into the same bounding box
 void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints, float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
@@ -20,12 +111,7 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
     cv::Mat X(4, 1, cv::DataType<double>::type);
     cv::Mat Y(3, 1, cv::DataType<double>::type);
 
-    // Sort all lidar points so that when adding them to their enclosing boxes
-    // they are still sorted for later use
-    std::sort(std::begin(lidarPoints), std::end(lidarPoints),
-            [](const LidarPoint &a, const LidarPoint& b) {
-                return a.x < b.x;
-            });
+    filterLidarOutliers(lidarPoints);
 
     for (auto it1 = lidarPoints.begin(); it1 != lidarPoints.end(); ++it1)
     {
@@ -148,8 +234,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
  *  - Calculate the standard deviation
  *  - Choose matches with very low deviation
  */
-static
-void clusterKptMatchesWithROI_internal(BoundingBox &boundingBox,
+void clusterKptMatchesWithROI(BoundingBox &boundingBox,
                               std::vector<cv::KeyPoint> &kptsPrev,
                               std::vector<cv::KeyPoint> &kptsCurr,
                               std::vector<cv::DMatch> &kptMatches)
@@ -183,15 +268,6 @@ void clusterKptMatchesWithROI_internal(BoundingBox &boundingBox,
             boundingBox.kptMatches.push_back(*dm.first);
         }
     }
-}
-
-
-void clusterKptMatchesWithROI(BoundingBox &boundingBox,
-                              std::vector<cv::KeyPoint> &kptsPrev,
-                              std::vector<cv::KeyPoint> &kptsCurr,
-                              std::vector<cv::DMatch> &kptMatches)
-{
-    clusterKptMatchesWithROI_internal(boundingBox, kptsPrev, kptsCurr, kptMatches);
 }
 
 // Compute time-to-collision (TTC) based on keypoint correspondences in successive images
@@ -249,148 +325,27 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     TTC = -dT / (1 - medDistRatio);
 }
 
-static
-void computeTTCLidar_naive(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
+void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
+                     std::vector<LidarPoint> &lidarPointsCurr,
+                     double frameRate, double &TTC)
 {
     // auxiliary variables
     double dT = 1 / frameRate;        // time between two measurements in seconds
     double laneWidth = 4.0; // assumed width of the ego lane
 
-    // find closest distance to Lidar points within ego lane
+    // Lidar points are already sorted based on X axis; hence, first
+    // point in the list is closest
     double minXPrev = 1e9, minXCurr = 1e9;
-    for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
-    {
-        
-        if (abs(it->y) <= laneWidth / 2.0)
-        { // 3D point within ego lane?
-            minXPrev = minXPrev > it->x ? it->x : minXPrev;
-        }
+    if (!lidarPointsPrev.empty()) {
+        minXPrev = lidarPointsPrev[0].x;
     }
-
-    for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
-    {
-
-        if (abs(it->y) <= laneWidth / 2.0)
-        { // 3D point within ego lane?
-            minXCurr = minXCurr > it->x ? it->x : minXCurr;
-        }
+    if (!lidarPointsCurr.empty()) {
+        minXCurr = lidarPointsCurr[0].x;
     }
 
     // compute TTC from both measurements
     TTC = minXCurr * dT / (minXPrev - minXCurr);
 }
-
-static double
-getLidarMinX (std::vector<LidarPoint> &lidarPoints) {
-    //NOTE: Lidar points are already sorted in X direction. So, calculate
-    //standard deviation of points in X, and eliminate points with higher
-    //deviation during ttc computation
-    double minX = std::numeric_limits<double>::max();
-    double laneWidth = 4.0;
-
-    // Vector for adjacent differences of X values
-    std::vector<double> xdiffs(lidarPoints.size(), 0);
-/*
-    std::adjacent_difference(std::begin(lidarPoints), //first
-                             std::end(lidarPoints),   //last
-                             std::begin(xdiffs),          //result first
-                             [](const LidarPoint& a, const LidarPoint& b) {
-                                return cv::norm(a.x - b.x);
-                             });
-*/
-
-
-    // Replicate std::adjacent_difference() behavior
-    // NOTE: cannot use std::adjacent_difference() since output vector has
-    // different type than input
-    // See https://en.cppreference.com/w/cpp/algorithm/adjacent_difference
-    auto adj_diff = [](std::vector<LidarPoint>::iterator first,
-                       std::vector<LidarPoint>::iterator last,
-                       std::vector<double>::iterator d_first) {
-        if (first == last) return d_first;
-
-        double acc = first->x;
-        *d_first = acc;
-        while (++first != last) {
-            double val = first->x;
-            *++d_first = val - std::move(acc);
-            acc = std::move(val);
-        }
-        return ++d_first;
-    };
-
-    // start a temporary stack frame so that symbols within this frame
-    // can be used elsewhere once we are done with current frame
-    {
-        auto it = std::begin(lidarPoints);
-        auto end = std::end(lidarPoints);
-        auto diffIt = std::begin(xdiffs);
-        adj_diff(it, end, diffIt);
-    }
-
-    // first element of xdiffs is unmodified copy of first lidar point X value.
-    // Elements starting from xdiffs.being()+1 up to xdiffs.end() has all the
-    // diffs we need. So, add them up then divide by the sizeof xdiffs - 1
-    double mean = std::accumulate(std::next(std::begin(xdiffs)), //first diff
-                                  std::end(xdiffs),     //last
-                                  0.0) / (double)(xdiffs.size() - 1);
-
-    double stddev = 0.0;
-
-    for (auto diff = xdiffs.begin()+1; diff != xdiffs.end(); diff++) {
-        stddev += pow(*diff - mean, 2);
-    }
-    stddev = sqrt(stddev / (xdiffs.size() - 1));
-
-    //start a new stack frame for temporary variables
-    auto lIt = std::begin(lidarPoints), lEnd = std::prev(std::end(lidarPoints));
-    auto diffIt = std::next(std::begin(xdiffs)), diffEnd = std::end(xdiffs);
-
-    for (; lIt != lEnd && diffIt != diffEnd; lIt++, diffIt++) {
-        if (abs(lIt->y) > laneWidth / 2.0 ||
-            abs(*diffIt - mean) > stddev) {
-            continue;
-        }
-
-        if (lIt->x < minX) {
-            minX = lIt->x;
-            break;
-        }
-    }
-    return minX;
-}
-
-/*
- * Computes TTC by "filtering" outliers via comparing their distance from next
- * lidar point in X axis to standard deviation.
- * NOTE: Doing the filtering during TTC computation is very WRONG because one
- * needs to do it for both previus and current lidar point cloud. To reduce the
- * overhead, one save the results dynamically for current point cloud and use it
- * for next frame as a previous lidar point cloud. For this project, it could
- * have been achieved by filterin during 
- */
-static
-void computeTTCLidar_internal_stddev(std::vector<LidarPoint> &lidarPointsPrev,
-                                     std::vector<LidarPoint> &lidarPointsCurr,
-                                     double frameRate, double &TTC)
-{
-    double laneWidth = 4.0;
-    double minXPrev = getLidarMinX(lidarPointsPrev);
-    double minXCurr = getLidarMinX(lidarPointsCurr);
-    double dT = 1 / frameRate;        // time between two measurements in seconds
-
-    // compute TTC from both measurements
-    TTC = minXCurr * dT / (minXPrev - minXCurr);
-}
-
-
-void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
-{
-    computeTTCLidar_internal_stddev(lidarPointsPrev, lidarPointsCurr, frameRate, TTC);
-}
-
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches,
                         std::map<int, int> &bbBestMatches,
