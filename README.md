@@ -68,3 +68,6 @@ The change in minX from frame 6 to frame 7 is so small that TTC with constant ve
 If TTC Lidar deduces 34 while Camera deduces 15, this means approximately, the minXCurr - minXPrev must be twice as big to get the results closer. None of the filtered points could explain missing points.
 Other reasons to the error could be calibration errors? What if the camera frame does not really match the lidar point cloud for that frame?
 At this point, I was not able to explain the reason behind it.
+
+Detectors such as ORB and HARRIS were least performing with huge amount of errors. ORB detector and descriptor had many false matches and filtering them leaves the bounding box with no matches at all. Hence, end result is either NaN or way off the expected.
+
